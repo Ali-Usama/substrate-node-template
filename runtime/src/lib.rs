@@ -236,6 +236,16 @@ impl pallet_scheduler::Config for Runtime {
 	type Preimages = ();
 }
 
+impl pallet_nicks::Config for Runtime {
+	type Currency = Balances;
+	type ReservationFee = ConstU128<100>;
+	type Slashed = ();
+	type ForceOrigin = frame_system::EnsureRoot<AccountId>;
+	type MinLength = ConstU32<8>;
+	type MaxLength = ConstU32<32>;
+	type RuntimeEvent = RuntimeEvent;
+}
+
 impl pallet_randomness_collective_flip::Config for Runtime {}
 
 impl pallet_aura::Config for Runtime {
@@ -328,6 +338,7 @@ construct_runtime!(
 		TransactionPayment: pallet_transaction_payment,
 		NodeAuthorization: pallet_node_authorization::{Pallet, Call, Storage, Event<T>, Config<T>},
 		Scheduler: pallet_scheduler,
+		Nicks: pallet_nicks,
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
