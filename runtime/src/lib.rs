@@ -25,6 +25,7 @@ use sp_std::prelude::*;
 use sp_version::NativeVersion;
 use sp_version::RuntimeVersion;
 use frame_system::EnsureRoot;
+pub use frame_support::traits::EqualPrivilegeOnly;
 
 // A few exports that help ease life for downstream crates.
 pub use frame_support::{
@@ -96,18 +97,18 @@ pub mod opaque {
 // https://docs.substrate.io/main-docs/build/upgrade#runtime-versioning
 #[sp_version::runtime_version]
 pub const VERSION: RuntimeVersion = RuntimeVersion {
-	spec_name: create_runtime_str!("node-template"),
-	impl_name: create_runtime_str!("node-template"),
-	authoring_version: 1,
+	spec_name: create_runtime_str!("node-template"),    // name of the runtime
+	impl_name: create_runtime_str!("node-template"),    // name of the outer node client
+	authoring_version: 1,                               // version for block authors
 	// The version of the runtime specification. A full node will not attempt to use its native
 	//   runtime in substitute for the on-chain Wasm runtime unless all of `spec_name`,
 	//   `spec_version`, and `authoring_version` are the same between Wasm and native.
 	// This value is set to 100 to notify Polkadot-JS App (https://polkadot.js.org/apps) to use
 	//   the compatible custom types.
-	spec_version: 100,
-	impl_version: 1,
-	apis: RUNTIME_API_VERSIONS,
-	transaction_version: 1,
+	spec_version: 101,                      // version of the runtime
+	impl_version: 1,                       // version of the outer node client
+	apis: RUNTIME_API_VERSIONS,            // list of supported APIs
+	transaction_version: 1,                // version of the dispatchable function interface
 	state_version: 1,
 };
 
@@ -150,6 +151,9 @@ parameter_types! {
 	pub const SS58Prefix: u8 = 42;
 	pub const MaxWellKnownNodes: u32 = 8;
  	pub const MaxPeerIdLength: u32 = 128;
+	// pub MaximumSchedulerWeight: Weight = Weight {ref_time: 0, proof_size: 10_000_000};
+	pub MaximumSchedulerWeight: Weight = Weight::from_proof_size(10000000);
+	pub const MaxScheduledPerBlock: u32 = 50;
 }
 
 // Configure FRAME pallets to include in runtime.
@@ -215,6 +219,21 @@ impl pallet_node_authorization::Config for Runtime {
 	type SwapOrigin = EnsureRoot<AccountId>;
 	type ResetOrigin = EnsureRoot<AccountId>;
 	type WeightInfo = ();
+}
+
+impl pallet_scheduler::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type RuntimeOrigin = RuntimeOrigin;
+	type PalletsOrigin = OriginCaller;
+	type RuntimeCall = RuntimeCall;
+	type MaximumWeight = MaximumSchedulerWeight;
+	type ScheduleOrigin = frame_system::EnsureRoot<AccountId>;
+	type MaxScheduledPerBlock = MaxScheduledPerBlock;
+	type WeightInfo = ();
+	type OriginPrivilegeCmp = EqualPrivilegeOnly;
+	// type PreimageProvider = ();
+	// type NoPreimagePostponement = ();
+	type Preimages = ();
 }
 
 impl pallet_randomness_collective_flip::Config for Runtime {}
@@ -308,6 +327,7 @@ construct_runtime!(
 		Balances: pallet_balances,
 		TransactionPayment: pallet_transaction_payment,
 		NodeAuthorization: pallet_node_authorization::{Pallet, Call, Storage, Event<T>, Config<T>},
+		Scheduler: pallet_scheduler,
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
