@@ -290,6 +290,8 @@ impl pallet_sudo::Config for Runtime {
 	type Call = Call;
 }
 
+impl pallet_randomness_collective_flip::Config for Runtime {}
+
 impl pallet_transaction_payment::Config for Runtime {
 	type Event = Event;
 	type OnChargeTransaction = CurrencyAdapter<Balances, ()>;
@@ -307,6 +309,9 @@ impl pallet_transaction_payment::Config for Runtime {
 // Used for the module template in `./template.rs`
 impl pallet_template::Config for Runtime {
 	type Event = Event;
+	type Currency = Balances;
+	type KittyRandomness = RandomnessCollectiveFlip;
+	type MaxKittiesOwned = frame_support::pallet_prelude::ConstU32<100>;
 }
 
 construct_runtime!(
@@ -317,6 +322,7 @@ construct_runtime!(
 	{
 		System: frame_system,
 		Timestamp: pallet_timestamp,
+		RandomnessCollectiveFlip: pallet_randomness_collective_flip,
 		Grandpa: pallet_grandpa,
 		Aura: pallet_aura,
 		// Indices: pallet_indices,
