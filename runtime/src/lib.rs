@@ -330,7 +330,7 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		TransactionPayment: pallet_transaction_payment,
 		// Used for the module template in `./template.rs`
-		TemplateModule: pallet_template,
+		KittiesModule: pallet_template,
 		// ExampleModule: substrate_module_template::{Module, Call, Storage, Event<T>},
 
 	}

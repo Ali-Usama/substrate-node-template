@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub use pallet::*;
-use codec::{Encode, Decode};
+// use codec::{Encode, Decode};
 
 #[frame_support::pallet]
 pub mod pallet {
@@ -14,10 +14,10 @@ pub mod pallet {
 	use frame_support::traits::Randomness;
 	use sp_io::hashing::blake2_128;
 	// use frame_support::traits::tokens::Balance;
-	use sp_runtime::traits::{AtLeast32BitUnsigned, Hash};
+	use sp_runtime::traits::{Hash};
 
-	#[cfg(feature = "std")]
-	use serde::{Serialize, Deserialize};
+	// #[cfg(feature = "std")]
+	// use serde::{Serialize, Deserialize};
 
 	type AccountOf<T> = <T as frame_system::Config>::AccountId;
 	type BalanceOf<T> = <<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
@@ -62,17 +62,31 @@ pub mod pallet {
 
 	// The pallet's runtime storage items:
 	#[pallet::storage]
-	#[pallet::getter(fn kitty_of_owner)]
-	pub type OwnedKitty<T: Config> = StorageMap<_, Blake2_128Concat, T::AccountId, T::Hash>;
-	// pub type OwnedKitty<T: Config> = StorageValue<_, T::Hash>;
-
-	#[pallet::storage]
 	pub type KittiesOwned<T: Config> = StorageMap<_, Twox64Concat, T::AccountId,
 		BoundedVec<T::Hash, T::MaxKittiesOwned>, ValueQuery>;
 
+	#[pallet::storage]
+	#[pallet::getter(fn owned_kitties_count)]
+	pub type OwnedKittiesCount<T: Config> = StorageMap<_, Twox64Concat, T::AccountId, u64, ValueQuery>;
 
 	#[pallet::storage]
-	pub type Kitties<T: Config> = StorageMap<_, Blake2_128Concat, T::Hash, Kitty<T>>;
+	pub type OwnedKittiesIndex<T: Config> = StorageMap<_, Blake2_128Concat, T::Hash, u64, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn all_kitties_count)]
+	pub type AllKittiesCount<T: Config> = StorageValue<_, u64, ValueQuery>;
+
+	#[pallet::storage]
+	#[pallet::getter(fn kitty_by_index)]
+	pub type AllKittiesArray<T: Config> = StorageMap<
+		_, Blake2_128Concat,
+		u64, T::Hash>;
+
+	#[pallet::storage]
+	pub type AllKittiesIndex<T: Config> = StorageMap<_, Blake2_128Concat, T::Hash, u64>;
+
+	#[pallet::storage]
+	pub type KittyData<T: Config> = StorageMap<_, Blake2_128Concat, T::Hash, Kitty<T>>;
 
 	#[pallet::storage]
 	#[pallet::getter(fn owner_of)]
@@ -86,14 +100,16 @@ pub mod pallet {
 	#[pallet::event]
 	#[pallet::generate_deposit(pub (super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		SomethingStored(u32, T::AccountId),
+		Created(T::AccountId, T::Hash),
 	}
 
 	// Errors inform users that something went wrong
+	#[derive(Debug)]
 	pub enum Error {
 		NoKittyOwner,
 		ExceedMaxKittyOwned,
 		MaxKittiesOwned,
+		KittyCountOverflow,
 	}
 
 	// Dispatchable functions allow users to interact with the pallet and invoke state changes
@@ -103,38 +119,10 @@ pub mod pallet {
 		pub fn create_kitty(origin: OriginFor<T>) -> DispatchResult {
 			let _sender = ensure_signed(origin)?;
 			let kitty_id = Self::mint(&_sender, None, None);
-			// let nonce = <Nonce<T>>::get();
-			// let random_seed = <frame_system::Pallet<T>>::random_seed();
-			//
-			// let random_hash = (random_seed, _sender, nonce).using_encoded(<T as frame_system::Config>::Hashing::hash(&[0]));
-			// ensure!(!<KittyOwner<T>>::exists(random_hash), "Kitty already exists");
+			Self::deposit_event(Event::Created(_sender.clone(), kitty_id.unwrap()));
 
-			// let new_kitty = Kitty::<T> {
-			// 	owner: _sender.clone(),
-			// 	dna: ,
-			// 	price: 0,
-			// 	gen: 0,
-			// };
-			//
-			// <Kitties<T>>::insert(random_hash, new_kitty);
-			// <KittyOwner<T>>::insert(random_hash, &_sender);
-			// <OwnedKitty<T>>::insert(&_sender, random_hash);
-			// <Nonce<T>>::mutate(|n| *n += 1);
 			Ok(())
 		}
-
-		// pub fn my_function(origin: OriginFor<T>, input_bool: bool) -> DispatchResult {
-		// 	let _sender = ensure_signed(origin)?;
-		// 	<MyBool<T>>::put(input_bool);
-		// 	Ok(())
-		// }
-		//
-		// #[pallet::weight(0)]
-		// pub fn set_value(origin: OriginFor<T>, input_value: u64) -> DispatchResult {
-		// 	let _sender = ensure_signed(origin)?;
-		// 	<Value<T>>::insert(_sender, input_value);
-		// 	Ok(())
-		// }
 	}
 
 	impl<T: Config> Kitty<T> {
@@ -160,13 +148,20 @@ pub mod pallet {
 				owner: owner.clone(),
 			};
 
+			let owned_kitties_count = Self::owned_kitties_count(&owner).checked_add(1).ok_or(<Error>::KittyCountOverflow)?;
+			let all_kitties_count = Self::all_kitties_count().checked_add(1).ok_or(<Error>::KittyCountOverflow)?;
+
 			let kitty_id = T::Hashing::hash_of(&kitty);
 
-			<Kitties<T>>::insert(kitty_id, kitty);
+			<KittyData<T>>::insert(kitty_id, kitty);
 			<KittiesOwned<T>>::try_mutate(&owner, |kitty_vec| kitty_vec.try_push(kitty_id))
 				.map_err(|_| <Error>::ExceedMaxKittyOwned)?;
-			<OwnedKitty<T>>::insert(&owner, kitty_id);
 			<KittyOwner<T>>::insert(kitty_id, &owner);
+			<AllKittiesCount<T>>::put(all_kitties_count);
+			<AllKittiesArray<T>>::insert(all_kitties_count - 1, kitty_id);
+			<AllKittiesIndex<T>>::insert(kitty_id, all_kitties_count - 1);
+			<OwnedKittiesCount<T>>::insert(&owner, owned_kitties_count);
+			<OwnedKittiesIndex<T>>::insert(kitty_id, owned_kitties_count - 1);
 
 			Ok(kitty_id)
 		}
