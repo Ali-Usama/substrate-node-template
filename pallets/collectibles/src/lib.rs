@@ -12,7 +12,7 @@ pub mod pallet {
 	type BalanceOf<T> =
 	<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
 
-	#[derive(Clone, Encode, Decode, PartialEq, Copy, RuntimeDebug, MaxEncodedLen, TypeInfo)]
+	#[derive(Encode, Decode, Clone, PartialEq, TypeInfo, MaxEncodedLen, RuntimeDebug)]
 	pub enum Color {
 		Red,
 		Yellow,
@@ -20,7 +20,13 @@ pub mod pallet {
 		Green,
 	}
 
-	#[derive(Clone, Encode, Decode, PartialEq, Copy, RuntimeDebug, TypeInfo, MaxEncodedLen)]
+	impl Default for Color {
+		fn default() -> Self {
+			Color::Red
+		}
+	}
+
+	#[derive(Encode, Decode, Clone, PartialEq, TypeInfo, MaxEncodedLen, RuntimeDebug)]
 	#[scale_info(skip_type_params(T))]
 	#[codec(mel_bound())]
 	pub struct Collectible<T: Config> {
@@ -50,7 +56,7 @@ pub mod pallet {
 	pub(super) type CollectiblesCount<T: Config> = StorageValue<_, u64, ValueQuery>;
 	/// Maps the collectibles struct to the unique ID:
 	#[pallet::storage]
-	pub(super) type CollectiblesMap<T: Config> = StorageMap<_, Twox64Concat, [u8; 16], Collectible<T>, ValueQuery>;
+	pub(super) type CollectiblesMap<T: Config> = StorageMap<_, Twox64Concat, [u8; 16], Collectible<T>>;
 	/// Track the collectibles owned by each account
 	#[pallet::storage]
 	pub(super) type OwnerOfCollectibles<T: Config> = StorageMap<_, Twox64Concat,
@@ -144,7 +150,7 @@ pub mod pallet {
 
 			// Check that a new collectible can be created
 			let count = CollectiblesCount::<T>::get();
-			let new_count = count.checked_add(1).ok_or(Error::<T>::BoundsOverflow);
+			let new_count = count.checked_add(1).ok_or(Error::<T>::BoundsOverflow)?;
 
 			// Append collectible to the OwnerOfCollectibles map
 			OwnerOfCollectibles::<T>::try_append(&owner, collectible.unique_id)
