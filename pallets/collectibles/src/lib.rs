@@ -36,17 +36,6 @@ pub mod pallet {
 		pub owner: T::AccountId,
 	}
 
-	// impl Default for Collectible {
-	// 	fn default() -> Self {
-	// 		Collectible {
-	// 			unique_id: Self::generate_id().0,
-	// 			price: None,
-	// 			color: Color::Red,
-	// 			owner: T::,
-	// 		}
-	// 	}
-	// }
-
 	#[pallet::pallet]
 	#[pallet::generate_store(pub (super) trait Store)]
 	pub struct Pallet<T>(PhantomData<T>);
@@ -83,7 +72,13 @@ pub mod pallet {
 		/// An account can't exceed the MaxOwned constant
 		MaximumCollectiblesOwned,
 		/// The total supply of collectibles can't exceed the u64 limit
-		BoundsOverflow
+		BoundsOverflow,
+		/// The collectible doesn't exist
+		NoCollectible,
+		/// You are not the owner
+		NotOwner,
+		/// Trying to transfer a collectible to yourself
+		TransferToYourself,
 	}
 
 	#[pallet::event]
@@ -93,7 +88,13 @@ pub mod pallet {
 		CollectibleCreated {
 			collectible: [u8; 16],
 			owner: T::AccountId
-		}
+		},
+		/// A collectible was successfully transferred
+		TransferSucceeded {
+			collectible: [u8; 16],
+			from: T::AccountId,
+			to: T::AccountId,
+		},
 	}
 
 	// pallet callable functions
@@ -108,6 +109,22 @@ pub mod pallet {
 
 			// Write new collectible to storage
 			Self::mint(&sender, collectible_id, color)?;
+			Ok(())
+		}
+
+		/// Transfer a collectible to another account
+		/// Transfer resets the price of the collectible, making it not for Sale
+		#[pallet::weight(0)]
+		pub fn transfer(
+			origin: OriginFor<T>,
+			to: T::AccountId,
+			unique_id: [u8; 16],
+		) -> DispatchResult {
+			let from = ensure_signed(origin)?;
+			let collectible = CollectiblesMap::<T>::get(&unique_id)
+				.ok_or(Error::<T>::NoCollectible)?;
+			ensure!(collectible.owner == from, Error::<T>::NotOwner);
+			Self::do_transfer(unique_id, to)?;
 			Ok(())
 		}
 	}
@@ -167,6 +184,41 @@ pub mod pallet {
 
 			// Returns the unique_id of the new collectible
 			Ok(unique_id)
+		}
+
+		pub fn do_transfer(
+			unique_id: [u8; 16],
+			to: T::AccountId
+		) -> DispatchResult {
+			// Get the collectible
+			let mut collectible = CollectiblesMap::<T>::get(&unique_id)
+				.ok_or(Error::<T>::NoCollectible)?;
+			let from = collectible.owner;
+
+			ensure!(from != to, Error::<T>::TransferToYourself);
+			let mut from_owned = OwnerOfCollectibles::<T>::get(&from);
+
+			// Remove collectible from list of owned collectible
+			if let Some(ind) = from_owned.iter().position(|&id| id == unique_id) {
+				from_owned.swap_remove(ind);
+			} else {
+				return Err(Error::<T>::NoCollectible.into())
+			}
+
+			// Add collectible to the list of owned collectibles
+			let mut to_owned = OwnerOfCollectibles::<T>::get(&to);
+			to_owned.try_push(unique_id).map_err(|()| Error::<T>::MaximumCollectiblesOwned)?;
+
+			// Transfer succeeded, update the owner and reset the price to 'None'
+			collectible.owner = to.clone();
+			collectible.price = None;
+
+			// Write updates to storage
+			CollectiblesMap::<T>::insert(&unique_id, collectible);
+			OwnerOfCollectibles::<T>::insert(&to, to_owned);
+			OwnerOfCollectibles::<T>::insert(&from, from_owned);
+
+			Ok(())
 		}
 	}
 }
