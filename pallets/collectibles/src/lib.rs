@@ -8,6 +8,7 @@ pub mod pallet {
 	use frame_system::pallet_prelude::*;
 	use frame_support::{traits::tokens::currency::Currency, traits::Randomness};
 	use frame_support::sp_runtime::app_crypto::sp_core::blake2_128;
+	use frame_support::sp_runtime::traits::IntegerSquareRoot;
 
 	type BalanceOf<T> =
 	<<T as Config>::Currency as Currency<<T as frame_system::Config>::AccountId>>::Balance;
@@ -79,6 +80,10 @@ pub mod pallet {
 		NotOwner,
 		/// Trying to transfer a collectible to yourself
 		TransferToYourself,
+		/// The bid is lower than the ask price
+		BidPriceTooSlow,
+		/// The collectible is nor for sale
+		NotForSale,
 	}
 
 	#[pallet::event]
@@ -95,6 +100,18 @@ pub mod pallet {
 			from: T::AccountId,
 			to: T::AccountId,
 		},
+		/// Price was updated successfully
+		PriceSet {
+			collectible: [u8; 16],
+			price: Option<BalanceOf<T>>,
+		},
+		/// Collectible was sold successfully
+		CollectibleSold {
+			collectible: [u8; 16],
+			seller: T::AccountId,
+			buyer: T::AccountId,
+			price: Option<BalanceOf<T>>,
+		}
 	}
 
 	// pallet callable functions
@@ -125,6 +142,43 @@ pub mod pallet {
 				.ok_or(Error::<T>::NoCollectible)?;
 			ensure!(collectible.owner == from, Error::<T>::NotOwner);
 			Self::do_transfer(unique_id, to)?;
+			Ok(())
+		}
+
+		#[pallet::weight(0)]
+		pub fn set_price(
+			origin: OriginFor<T>,
+			price: Option<BalanceOf<T>>,
+			unique_id: [u8; 16],
+		) -> DispatchResult {
+			let sender = ensure_signed(origin)?;
+
+			// Check if the collectible exists
+			let mut  collectible = CollectiblesMap::<T>::get(&unique_id)
+				.ok_or(Error::<T>::NoCollectible)?;
+			ensure!(collectible.owner == sender, Error::<T>::NotOwner );
+
+			// set the price in storage
+			collectible.price = price;
+			CollectiblesMap::<T>::insert(&unique_id, collectible);
+
+			// Deposit the 'PriceSet' event
+			Self::deposit_event(Event::PriceSet {
+				collectible: unique_id,
+				price,
+			});
+
+			Ok(())
+		}
+
+		#[pallet::weight(0)]
+		pub fn buy_collective(
+			origin: OriginFor<T>,
+			unique_id: [u8; 16],
+			bid_price: BalanceOf<T>,
+		) -> DispatchResult {
+			let buyer = ensure_signed(origin)?;
+			Self::do_buy_collectible(bid_price, unique_id, buyer)?;
 			Ok(())
 		}
 	}
@@ -218,6 +272,68 @@ pub mod pallet {
 			OwnerOfCollectibles::<T>::insert(&to, to_owned);
 			OwnerOfCollectibles::<T>::insert(&from, from_owned);
 
+			Ok(())
+		}
+
+		pub fn do_buy_collectible(
+			bid_price: BalanceOf<T>,
+			unique_id: [u8; 16],
+			buyer: T::AccountId,
+		) -> DispatchResult {
+			// Get the collectible from the storage
+			let mut collectible = CollectiblesMap::<T>::get(&unique_id)
+				.ok_or(Error::<T>::NoCollectible)?;
+			let seller = collectible.owner;
+
+			ensure!(seller != buyer, Error::<T>::TransferToYourself);
+			let mut from_owned = OwnerOfCollectibles::<T>::get(&seller);
+
+			// Remove collectible from owner collectibles
+			if let Some(ind) = from_owned.iter().position(|&id| id == unique_id) {
+				from_owned.swap_remove(ind);
+			} else {
+				return Err(Error::<T>::NoCollectible.into())
+			};
+
+			// Add collectible to the buyer collectibles
+			let mut buyer_owned = OwnerOfCollectibles::<T>::get(&buyer);
+			buyer_owned.try_push(unique_id).map_err(|()| Error::<T>::MaximumCollectiblesOwned)?;
+
+			// Mutating the state with a balance transfer, so nothing is allowed to fail after tihs
+			if let Some(price) = collectible.price {
+				ensure!(bid_price >= price, Error::<T>::BidPriceTooSlow);
+				// Transfer the amount from buyer to seller
+				T::Currency::transfer(
+					&seller,
+					&buyer,
+					price,
+					frame_support::traits::ExistenceRequirement::KeepAlive
+				)?;
+
+				// Deposit the Sold event
+				Self::deposit_event(Event::<T>::CollectibleSold {
+					seller: seller.clone(),
+					buyer: buyer.clone(),
+					price: Some(price),
+					collectible: unique_id
+				});
+			} else {
+				return  Err(Error::<T>::NotForSale.into())
+			}
+
+			// Transfer succeeded, update the collectible owner and reset the price
+			collectible.owner = buyer.clone();
+			collectible.price = None;
+
+			// Write updates to storage
+			CollectiblesMap::<T>::insert(&unique_id, collectible);
+			OwnerOfCollectibles::<T>::insert(&buyer, buyer_owned);
+			OwnerOfCollectibles::<T>::insert(&seller, from_owned);
+			Self::deposit_event(Event::<T>::TransferSucceeded {
+				collectible: unique_id,
+				from: seller,
+				to: buyer
+			});
 			Ok(())
 		}
 	}
