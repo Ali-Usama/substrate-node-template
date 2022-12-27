@@ -63,6 +63,8 @@ pub use sp_runtime::{Perbill, Permill};
 /// Import the template pallet.
 pub use pallet_template;
 
+pub use collectibles;
+
 /// An index to a block.
 pub type BlockNumber = u32;
 
@@ -356,6 +358,13 @@ impl pallet_base_fee::Config for Runtime {
 	type DefaultElasticity = DefaultElasticity;
 }
 
+impl collectibles::Config for Runtime {
+	type RuntimeEvent = RuntimeEvent;
+	type Currency = Balances;
+	type Randomness = RandomnessCollectiveFlip;
+	type MaxOwned = ConstU32<100>;
+}
+
 
 
 // Create the runtime by composing the FRAME pallets that were previously configured.
@@ -376,6 +385,7 @@ construct_runtime!(
 		Sudo: pallet_sudo,
 		// Include the custom logic from the pallet-template in the runtime.
 		TemplateModule: pallet_template,
+		Collectibles: collectibles,
 		EVM: pallet_evm,
 		Ethereum: pallet_ethereum,
 		BaseFee: pallet_base_fee,

@@ -7,7 +7,6 @@ pub mod pallet {
 	use frame_support::pallet_prelude::*;
 	use frame_system::pallet_prelude::*;
 	use frame_support::{traits::tokens::currency::Currency, traits::Randomness};
-	use frame_support::sp_runtime::app_crypto::sp_core::blake2_128;
 	use frame_support::sp_runtime::traits::IntegerSquareRoot;
 
 	type BalanceOf<T> =
